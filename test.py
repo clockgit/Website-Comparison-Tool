@@ -26,6 +26,12 @@ class WebsiteComparer:
         self.baseDir = './report/'
         self.checked_urls = {}
         self.debug = False
+        self.tags = {
+            'header': "//header[@role='banner']",
+            'footer': "//footer[@role='contentinfo']",
+            'main': "//main[@id='main-content']",
+        }
+        self.by = By.XPATH
 
     def get_page_urls(self, url):
         response = requests.get(url)
@@ -120,7 +126,9 @@ class WebsiteComparer:
                 # Check for differences in page content
 #                 self.diff(param)
                 # Check for visual differences using screenshots
-                self.image_diff(param)
+                self.image_diff(param, 'header')
+                self.image_diff(param, 'main')
+                self.image_diff(param, 'footer')
                 # Compare page URLs
 #                 site1_page_urls = self.get_page_urls(url1)
 #                 site2_page_urls = self.get_page_urls(url2)
@@ -130,7 +138,7 @@ class WebsiteComparer:
 #                 site2_broken_links = self.check_links(site2_page_urls)
 #                 self.save_page_urls(url1, site1_broken_links, f"{param['dir']}/site1_broken_links.txt")
 #                 self.save_page_urls(url2, site2_broken_links, f"{param['dir']}/site2_broken_links.txt")
-                create_reports(self, param['1st']['path'])
+                self.create_reports(self.checked_urls[param['1st']['path']])
 
             except Exception as e:
                 print(f'Exception: {e}')
@@ -160,28 +168,35 @@ class WebsiteComparer:
         else:
           r["exist"] = False
           if s1 == False:
-            self.checked_urls[r["path"]] = {'s1': {'site': r["site"], 'page': r["page"], 'path': r["path"], 'url': url}}
+            self.checked_urls[r["path"]] = {'s1': {'site': r["site"], 'page': r["page"], 'path': r["path"], 'url': url, 'image':{}}, 's2':{}, 'diff':{}}
           else:
-            self.checked_urls[s1['path']]['s2'] = {'site': r["site"], 'page': r["page"], 'path': r["path"], 'url': url}
+            self.checked_urls[s1['path']]['s2'] = {'site': r["site"], 'page': r["page"], 'path': r["path"], 'url': url, 'image':{}, 'diff':{}}
         return r
 
-    def take_screenshot(self, driver, path, name):
+    def take_screenshot(self, driver, path, name, tag = 'main'):
         self.log(f"take_screenshot(self, {driver}, {path}, {name})")
-        #driver.set_window_size(1700, 900)
-        driver.set_window_size(1700, 900)
-        driver.execute_script('window.scrollTo(0, 0);')
-#         driver.execute_script('let h = document.getElementsByTagName("header");for (let i = 0; i < h.length; i++) {h[i].style.display = "none";}')
-#         driver.execute_script('let f = document.getElementsByTagName("footer");for (let i = 0; i < f.length; i++) {f[i].style.display = "none";}')
         img_url = f"{path}/{name}"
-        driver.get_screenshot_as_file(img_url)
+        ######
+        #original_size = driver.get_window_size()
+        #required_width = driver.execute_script('return document.body.parentNode.scrollWidth')
+        #required_height = driver.execute_script('return document.body.parentNode.scrollHeight')
+        #driver.set_window_size(required_width, required_height)
+        #driver.execute_script('window.scrollTo(0, 0);')
+        el = driver.find_element(self.by, self.tags[tag])
+        el.screenshot(img_url)  # avoids scrollbar
+        #driver.set_window_size(original_size['width'], original_size['height'])
+        ######
+        #driver.set_window_size(1700, 900)
+        #driver.get_screenshot_as_file(img_url)
         return Image.open(img_url).convert('RGB')
 
-    def image_diff(self, param):
+    def image_diff(self, param, tag='main'):
         self.log(f"image_diff(self, {param})", self.baseDir)
-        image1 = self.take_screenshot(param['driver1'], param['dir'], 'site_1.png')
-        image2 = self.take_screenshot(param['driver2'], param['dir'], 'site_2.png')
+        #time.sleep(5)
+        image1 = self.take_screenshot(param['driver1'], param['dir'], tag + '_site_1.png', tag)
+        image2 = self.take_screenshot(param['driver2'], param['dir'], tag + '_site_2.png', tag)
         diff_image = ImageChops.difference(image1, image2)
-        visual_diff = f"{param['dir']}/diff.png"
+        visual_diff = f"{param['dir']}/{tag}_diff.png"
         diff_image.save(visual_diff)
         msg = 'yes'
         if diff_image.getbbox():
@@ -189,9 +204,10 @@ class WebsiteComparer:
             print(f"Visual differences saved to {visual_diff}")
         else:
             print("No visual differences.")
-        self.checked_urls[param['1st']['path']]['diff'] = {'match': msg, 'image': visual_diff}
-        self.checked_urls[param['1st']['path']]['s1']['image'] = f"{param['dir']}/site_1.png"
-        self.checked_urls[param['1st']['path']]['s2']['image'] = f"{param['dir']}/site_2.png"
+        self.checked_urls[param['1st']['path']]['diff'][tag] = {'match': msg, 'image': visual_diff}
+        self.checked_urls[param['1st']['path']]['s1']['image'][tag] = f"{param['dir']}/{tag}_site_1.png"
+        self.checked_urls[param['1st']['path']]['s2']['image'][tag] = f"{param['dir']}/{tag}_site_2.png"
+
 
 
     def log(self, msg, dir = './report/'):
@@ -212,88 +228,82 @@ class WebsiteComparer:
                 file.write(page_url + "\n")
         self.log(f"URLs saved to {filename}.")
     def create_report_start(self, d1, d2):
+        start = "<head><style>.space{padding:5px 0;} .path{width:4vw;} table{width:100%} td{padding:10px;} .site{width:25%} .dif{width:75%;} img{width: 100%; height: auto;} tr:nth-child(2n+2) {background-color: #FCC;} tr:nth-child(2n+3) {background-color: #CFC;}</style>\r\n<body>\r\n<h1>" + f'd1: {d1}<br/>d2: {d2}' + "</h1>\r\n<table>\r\n"
         with open('./report/report.html', "w") as file:
-                file.write("<head><style>td{padding:5px;} img{width: 100%; height: auto;} .image{width:170px;} .even{background-color: #CCC;}</style>\r\n")
-                file.write("<body>\r\n")
                 file.write(f'<a href="images.html">image</a>\r\n')
-                file.write(f"<h1>{d1}<br/>{d2}</h1>\r\n")
-                file.write('<table>\r\n')
+                file.write(start)
+
                 file.write("<tr>\r\n")
                 #file.write("<th>Site1</th>")
                 file.write("<th>page</th>")
                 file.write("<th>path</th>")
-                file.write(f'<th class="image">{d1}</th>')
-                #file.write("<th>Site2</th>")
-                #file.write("<th>page</th>")
-                #file.write("<th>path</th>")
-                file.write(f'<th class="image">{d2}</th>')
-                file.write("<th>Match</th>")
-                file.write('<th class="image">Diff</th>\r\n')
                 file.write('<th>Load Time</th>')
+                for tag in self.tags:
+                    file.write(f'<th class="image">d1 {tag}</th>')
+                    file.write(f'<th class="image">d2 {tag}</th>')
+                    file.write("<th>Match</th>")
+                    file.write(f'<th class="image">Diff {tag}</th>\r\n')
                 file.write("</tr>\r\n")
         with open('./report/images.html', "w") as file:
-                file.write("<head><style>.space{padding:5px 0;} .path{width:4vw;} table{width:100%} td{padding:10px;} .site{width:25%} .dif{width:75%;} img{width: 100%; height: auto;} .even{background-color: #fcc;} .odd{background-color: #cfc;}</style>\r\n")
-                file.write("<body>\r\n")
                 file.write(f'<a href="report.html">main report</a>\r\n')
-                file.write(f"<h1>{d1}<br/>{d2}</h1>\r\n")
-                file.write('<table>\r\n')
+                file.write(start)
+
                 file.write("<tr>\r\n")
                 file.write('<th class="site">Site</th>')
                 file.write('<th class="diff">Diff</th>\r\n')
                 file.write("</tr>\r\n")
     def create_report_end(self):
-        with open('./report/report.html', "w") as file:
-            file.write("</table>\r\n")
-            file.write("</body>\r\n")
-        with open('./report/images.html', "w") as file:
-            file.write("</table>\r\n")
-            file.write("</body>\r\n")
+        end = "</table>\r\n</body>\r\n"
+        with open('./report/report.html', "a") as file:
+            file.write(end)
+        with open('./report/images.html', "a") as file:
+            file.write(end)
+
     def create_reports(self, data):
-        with open('./report/report.html', "w") as file:
-            file.write(f'<tr class="{c}">\r\n')
+        with open('./report/report.html', "a") as file:
+            file.write(f'<tr>\r\n')
             #file.write(f"<td>{data['s1']['site']}</td>")
             file.write(f"<td>{data['s1']['page']}</td>")
             file.write(f"<td>{data['s1']['path']}</td>")
-            img = data['s1']['image'].replace("./report/", "").replace("//", "/")
-            file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
-
-            #file.write(f"<td>{data['s2']['site']}</td>")
-            #file.write(f"<td>{data['s2']['page']}</td>")
-            #file.write(f"<td>{data['s2']['path']}</td>")
-            img = data['s2']['image'].replace("./report/", "").replace("//", "/")
-            file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
-
-            file.write(f"<td>{data['diff']['match']}</td>")
-            img = data["diff"]["image"].replace("./report/", "").replace("//", "/")
-            file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
             file.write(f'<td>{data['s1']['load_time']} / {data['s2']['load_time']}</td>\r\n')
+
+            for tag in self.tags:
+                img = data['s1']['image'][tag].replace("./report/", "").replace("//", "/")
+                file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
+                img = data['s2']['image'][tag].replace("./report/", "").replace("//", "/")
+                file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
+
+                file.write(f"<td>{data['diff'][tag]['match']}</td>")
+                img = data["diff"][tag]['image'].replace("./report/", "").replace("//", "/")
+                file.write(f'<td><a href="{img}" target="_blank"><img src="{img}"></a></td>\r\n')
             file.write("</tr>\r\n")
 
-        with open('./report/images.html', "w") as file:
-            img1 = data['s1']['image'].replace("./report/", "").replace("//", "/")
-            img2 = data['s2']['image'].replace("./report/", "").replace("//", "/")
-            diff = data["diff"]["image"].replace("./report/", "").replace("//", "/")
-            file.write(f'<tr class="{c}">\r\n')
-            file.write('<td class="site">')
-            file.write('<h2 class="space">')
-            file.write(f'{data['s1']['page']}')
-            file.write('</h2>')
-            file.write('<div class="space">')
-            file.write(f'<a title="{data['s1']['url']}" href="{data['s1']['url']}" target="_blank">S1</a><br />')
-            file.write(f'Load: {data['s1']['load_time']}<br />')
-            file.write(f'<a href="{img1}" target="_blank"><img src="{img1}"></a>')
-            file.write('</div>')
+        with open('./report/images.html', "a") as file:
+            for tag in self.tags:
+                file.write(f'<tr>\r\n')
+                file.write('<td class="site">')
+                file.write('<h2 class="space">')
+                file.write(f'{data['s1']['page']}')
+                file.write('</h2>')
+                file.write('<div class="space">')
+                file.write(f'<a title="{data['s1']['url']}" href="{data['s1']['url']}" target="_blank">S1</a><br />')
+                file.write(f'Load: {data['s1']['load_time']}<br />')
+                file.write(f'Page section: {tag}')
+                img1 = data['s1']['image'][tag].replace("./report/", "").replace("//", "/")
+                file.write(f'<a href="{img1}" target="_blank"><img src="{img1}"></a>')
+                file.write('</div>')
 
-            file.write('<div class="space">')
-            file.write(f'<a title="{data['s2']['url']}" href="{data['s2']['url']}" target="_blank">S2</a><br />')
-            file.write(f'Load: {data['s2']['load_time']}<br />')
-            file.write(f'<a href="{img2}" target="_blank"><img src="{img2}"></a>')
-            file.write('</div>')
+                file.write('<div class="space">')
+                file.write(f'<a title="{data['s2']['url']}" href="{data['s2']['url']}" target="_blank">S2</a><br />')
+                file.write(f'Load: {data['s2']['load_time']}<br />')
+                img2 = data['s2']['image'][tag].replace("./report/", "").replace("//", "/")
+                file.write(f'<a href="{img2}" target="_blank"><img src="{img2}"></a>')
+                file.write('</div>')
 
-            file.write('</td>')
-
-            file.write(f'<td class="diff"><a href="{diff}" target="_blank"><img src="{diff}" width="33vw"></a></td>\r\n')
-            file.write("</tr>\r\n")
+                file.write('</td>')
+                diff = data["diff"][tag]["image"].replace("./report/", "").replace("//", "/")
+                file.write(f'<td class="diff"><a href="{diff}" target="_blank"><img src="{diff}" width="33vw"></a></td>\r\n')
+                file.write("</tr>\r\n")
 
 
 if __name__ == "__main__":
@@ -319,4 +329,4 @@ if __name__ == "__main__":
                 browser
             )
 
-    comparer.create_report_end(d1, d2)
+    comparer.create_report_end()
