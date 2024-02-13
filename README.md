@@ -18,7 +18,7 @@ Before running the script, make sure you have the following:
 - Run the script using the following command:
 `python3 test.py
 `
-- Update paths.txt with on path per line. Don't leave any blank lines, all must start with / and currently does not handle duplicates.
+- Update paths.txt with on path per line. Don't leave any blank lines, all must start with / and currently does not handle duplicates
 
 - The script will prompt you to enter the URLs of the two websites you want to compare. Enter the URLs as requested.
 
